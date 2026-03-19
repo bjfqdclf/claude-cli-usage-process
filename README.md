@@ -18,10 +18,22 @@
 bash install.sh
 ```
 
+Windows PowerShell：
+
+```powershell
+.\install.ps1
+```
+
 卸载：
 
 ```bash
 bash uninstall.sh
+```
+
+Windows PowerShell：
+
+```powershell
+.\uninstall.ps1
 ```
 
 手动验证：
@@ -40,6 +52,7 @@ node scripts/usage-bar.js
 - `7d reset`：支持固定成类似 `Thu 3:59 PM` 的 App 风格时间
 - `tok`：显示 `stats-cache.json` 里的 token 缓存值
 - 自带 [install.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/install.sh) 和 [uninstall.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/uninstall.sh)
+- 自带 Bash 和 PowerShell 安装 / 卸载脚本
 
 ## 适用场景
 
@@ -82,7 +95,9 @@ token 兜底数据来自：
 
 ```text
 install.sh
+install.ps1
 uninstall.sh
+uninstall.ps1
 usage-config.json
 scripts/
   usage-bar.js
@@ -93,7 +108,9 @@ scripts/
 说明：
 
 - [install.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/install.sh)：一键安装到 `~/.claude/settings.json`
+- [install.ps1](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/install.ps1)：Windows PowerShell 一键安装
 - [uninstall.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/uninstall.sh)：一键恢复或移除全局状态栏配置
+- [uninstall.ps1](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/uninstall.ps1)：Windows PowerShell 一键卸载
 - [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json)：周重置时间配置
 - [usage-bar.js](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/scripts/usage-bar.js)：核心状态栏脚本
 
@@ -103,6 +120,12 @@ scripts/
 
 ```bash
 bash install.sh
+```
+
+Windows PowerShell：
+
+```powershell
+.\install.ps1
 ```
 
 它会自动：
@@ -118,12 +141,24 @@ bash install.sh
 bash install.sh --dry-run
 ```
 
+Windows PowerShell：
+
+```powershell
+.\install.ps1 --dry-run
+```
+
 ## 卸载
 
 直接执行：
 
 ```bash
 bash uninstall.sh
+```
+
+Windows PowerShell：
+
+```powershell
+.\uninstall.ps1
 ```
 
 它会自动：
@@ -136,6 +171,12 @@ bash uninstall.sh
 
 ```bash
 bash uninstall.sh --dry-run
+```
+
+Windows PowerShell：
+
+```powershell
+.\uninstall.ps1 --dry-run
 ```
 
 ## 手动接入
