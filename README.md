@@ -1,8 +1,14 @@
 # claude-cli-usage-process
 
-给 Claude CLI 的状态栏加一个本地近实时的 usage 展示。
+给 Claude CLI 的状态栏加一个本地近实时 usage 展示，尽量贴近 Claude App 的 session / weekly 进度观感。
 
-## 使用方式
+## 效果
+
+```text
+📊 sess █░░░░░░░ 14% 1.1K/7.8K reset in 3h 32m | 7d ░░░░░░░░ 2% 1.4K/70.0K reset Thu 3:59 PM | tok 5.9K~
+```
+
+## 快速开始
 
 安装：
 
@@ -24,20 +30,16 @@ node scripts/usage-bar.js
 
 安装完成后，重启 Claude CLI 即可生效。
 
-当前版本的目标不是复刻 Anthropic 官方 quota 面板，而是提供一个尽量接近 Claude App 观感的本地估算状态栏：
+## 特性
 
 - `sess`：按全账号最近 5 小时窗口估算
 - `7d`：按全账号最近 7 天窗口估算
 - `sess reset`：显示倒计时，例如 `in 3h 11m`
-- `7d reset`：支持固定为类似 `Thu 3:59 PM` 的 App 风格时间
+- `7d reset`：支持固定成类似 `Thu 3:59 PM` 的 App 风格时间
+- `tok`：显示 `stats-cache.json` 里的 token 缓存值
+- 自带 `install.sh` / `uninstall.sh`
 
-## 效果示例
-
-```text
-📊 sess █░░░░░░░ 14% 1.1K/7.8K reset in 3h 32m | 7d ░░░░░░░░ 2% 1.4K/70.0K reset Thu 3:59 PM | tok 5.9K~
-```
-
-字段说明：
+## 字段说明
 
 - `sess`：最近 5 小时窗口的估算消耗
 - `7d`：最近 7 天窗口的估算消耗
