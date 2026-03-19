@@ -1,0 +1,8 @@
+{
+  "weeklyReset": {
+    "type": "fixed",
+    "weekday": 4,
+    "hour": 15,
+    "minute": 59
+  }
+}
