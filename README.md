@@ -12,37 +12,14 @@
 
 ## 快速开始
 
-安装：
+| 操作 | macOS / Linux | Windows PowerShell |
+| --- | --- | --- |
+| 下载代码 | `git clone https://github.com/bjfqdclf/claude-cli-usage-process.git && cd claude-cli-usage-process` | `git clone https://github.com/bjfqdclf/claude-cli-usage-process.git; cd claude-cli-usage-process` |
+| 安装 | `bash install.sh` | `.\install.ps1` |
+| 验证 | `node scripts/usage-bar.js` | `node .\scripts\usage-bar.js` |
+| 卸载 | `bash uninstall.sh` | `.\uninstall.ps1` |
 
-```bash
-bash install.sh
-```
-
-Windows PowerShell：
-
-```powershell
-.\install.ps1
-```
-
-卸载：
-
-```bash
-bash uninstall.sh
-```
-
-Windows PowerShell：
-
-```powershell
-.\uninstall.ps1
-```
-
-手动验证：
-
-```bash
-node scripts/usage-bar.js
-```
-
-安装完成后，重启 Claude CLI 即可生效。
+安装或卸载后，重启 Claude CLI 即可生效。
 
 ## 亮点
 
