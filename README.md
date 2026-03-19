@@ -2,6 +2,8 @@
 
 给 Claude CLI 的状态栏加一个本地近实时 usage 展示，尽量贴近 Claude App 的 session / weekly 进度观感。
 
+适合想在 CLI 里快速看到“当前 5 小时窗口用了多少、最近 7 天大概用了多少、什么时候重置”的用户。
+
 ## 效果
 
 ```text
@@ -30,14 +32,20 @@ node scripts/usage-bar.js
 
 安装完成后，重启 Claude CLI 即可生效。
 
-## 特性
+## 亮点
 
 - `sess`：按全账号最近 5 小时窗口估算
 - `7d`：按全账号最近 7 天窗口估算
 - `sess reset`：显示倒计时，例如 `in 3h 11m`
 - `7d reset`：支持固定成类似 `Thu 3:59 PM` 的 App 风格时间
 - `tok`：显示 `stats-cache.json` 里的 token 缓存值
-- 自带 `install.sh` / `uninstall.sh`
+- 自带 [install.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/install.sh) 和 [uninstall.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/uninstall.sh)
+
+## 适用场景
+
+- 你主要在 Claude CLI 里工作，想随时看 usage 趋势
+- 你想在本地模拟接近 Claude App 的 session / weekly 状态感知
+- 你接受“估算值”，不要求和官方额度面板完全一致
 
 ## 字段说明
 
@@ -54,9 +62,9 @@ node scripts/usage-bar.js
 - 不能保证和 Claude App / Pro / Max 的官方 quota 完全一致
 - 不能直接读取官方剩余额度
 - `sess reset` 是按本地 5 小时窗口估算
-- `7d reset` 如果未显式配置，会退回到本地滚动窗口推断
+- `7d reset` 如果未显式配置，会退回到本地窗口推断
 
-适合用来盯使用趋势，不适合当账单或官方配额真值。
+适合用来盯趋势，不适合当账单或官方配额真值。
 
 ## 数据来源
 
@@ -110,8 +118,6 @@ bash install.sh
 bash install.sh --dry-run
 ```
 
-安装完成后，重启 Claude CLI 即可生效。
-
 ## 卸载
 
 直接执行：
@@ -132,13 +138,9 @@ bash uninstall.sh
 bash uninstall.sh --dry-run
 ```
 
-## 手动验证
+## 手动接入
 
-```bash
-node scripts/usage-bar.js
-```
-
-如果只想自己接入，不使用安装脚本，可以在 `~/.claude/settings.json` 里写：
+如果不使用安装脚本，可以在 `~/.claude/settings.json` 里写：
 
 ```json
 {
@@ -147,6 +149,12 @@ node scripts/usage-bar.js
     "command": "node /Users/bjfqdclf/Public/dev/claude-cli-usage-process/scripts/usage-bar.js"
   }
 }
+```
+
+手动验证命令：
+
+```bash
+node scripts/usage-bar.js
 ```
 
 ## 周重置时间配置
@@ -203,13 +211,27 @@ reset Thu 3:59 PM
 CURRENT_SESSION_TOKEN_BUDGET=10000 WEEKLY_TOKEN_BUDGET=80000 node scripts/usage-bar.js
 ```
 
+## FAQ
+
+### 为什么和 Claude App 显示的不完全一样？
+
+因为这个项目读的是本地 `history.jsonl` 和 `stats-cache.json`，做的是近实时估算，不是官方服务端账本。
+
+### 为什么 weekly reset 可以显示成 `Thu 3:59 PM`？
+
+因为支持在 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里固定周重置时间，用来贴近你在 App 里看到的时间。
+
+### 为什么有时 token 后面有 `~`？
+
+表示这个 token 值来自缓存，不一定是当天实时值。
+
 ## 实现说明
 
-实现策略很简单：
+实现策略：
 
 - 读取 `history.jsonl`
-- 基于消息长度、slash command、上下文膨胀做一个估算
+- 基于消息长度、slash command、上下文膨胀做估算
 - 计算最近 5 小时和最近 7 天窗口
 - 用 `stats-cache.json` 提供 token 补充信息
 
-这样做的优点是依赖少、可移植、安装成本低。缺点是它永远只是估算，不会是官方真值。
+优点是依赖少、可移植、安装成本低。缺点是它永远只是估算，不会是官方真值。
