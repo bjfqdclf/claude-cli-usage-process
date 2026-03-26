@@ -4,6 +4,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const CURRENT_SESSION_TOKEN_BUDGET = Number(process.env.CURRENT_SESSION_TOKEN_BUDGET || 7800);
 const WEEKLY_TOKEN_BUDGET = Number(process.env.WEEKLY_TOKEN_BUDGET || 70000);
@@ -15,6 +16,9 @@ const SLASH_COMMAND_BASE_TOKENS = Number(process.env.SLASH_COMMAND_BASE_TOKENS |
 const ASSISTANT_REPLY_MULTIPLIER = Number(process.env.ASSISTANT_REPLY_MULTIPLIER || 2.4);
 const CONTEXT_GROWTH_RATE = Number(process.env.CONTEXT_GROWTH_RATE || 0.18);
 const CONTEXT_WINDOW_TOKENS = Number(process.env.CONTEXT_WINDOW_TOKENS || 12000);
+const USAGE_MODE = (process.env.USAGE_MODE || 'auto').toLowerCase();
+const USAGE_API_TIMEOUT_MS = Number(process.env.USAGE_API_TIMEOUT_MS || 4000);
+const CLAUDE_KEYCHAIN_SERVICE = process.env.CLAUDE_KEYCHAIN_SERVICE || 'Claude Code-credentials';
 
 const HISTORY_PATH = path.join(os.homedir(), '.claude', 'history.jsonl');
 const STATS_PATH = path.join(os.homedir(), '.claude', 'stats-cache.json');
@@ -68,6 +72,15 @@ function formatWeekdayTime(ts) {
   const suffix = hours24 >= 12 ? 'PM' : 'AM';
   const hours12 = hours24 % 12 || 12;
   return `${weekday} ${hours12}:${minutes} ${suffix}`;
+}
+
+function parseIsoDate(value) {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function loadConfig() {
@@ -307,21 +320,119 @@ function readTokenInfo(todayStr) {
   };
 }
 
-function main() {
-  const now = new Date();
-  const nowTs = now.getTime();
+function readClaudeCredentialsFromKeychain() {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  try {
+    return execFileSync(
+      '/usr/bin/security',
+      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    ).trim();
+  } catch {
+    return null;
+  }
+}
+
+function extractAccessToken(tokenJson) {
+  if (!tokenJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(tokenJson);
+    return parsed && parsed.claudeAiOauth && typeof parsed.claudeAiOauth.accessToken === 'string'
+      ? parsed.claudeAiOauth.accessToken
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOfficialUsage(accessToken) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), USAGE_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data && typeof data === 'object' ? data : null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getOfficialUsage() {
+  if (USAGE_MODE === 'estimate') {
+    return null;
+  }
+
+  const tokenJson = readClaudeCredentialsFromKeychain();
+  const accessToken = extractAccessToken(tokenJson);
+  if (!accessToken) {
+    if (USAGE_MODE === 'official') {
+      throw new Error('无法从 macOS Keychain 读取 Claude access token');
+    }
+    return null;
+  }
+
+  try {
+    return await fetchOfficialUsage(accessToken);
+  } catch (error) {
+    if (USAGE_MODE === 'official') {
+      throw error;
+    }
+    return null;
+  }
+}
+
+function buildOfficialOutput(usage, nowTs, tokenStr) {
+  const fiveHour = usage && usage.five_hour && typeof usage.five_hour === 'object' ? usage.five_hour : null;
+  const sevenDay = usage && usage.seven_day && typeof usage.seven_day === 'object' ? usage.seven_day : null;
+
+  if (!fiveHour && !sevenDay) {
+    return null;
+  }
+
+  const sessionPct = Math.round(Number(fiveHour && fiveHour.utilization) || 0);
+  const weekPct = Math.round(Number(sevenDay && sevenDay.utilization) || 0);
+  const sessionRatio = sessionPct / 100;
+  const weekRatio = weekPct / 100;
+
+  const fiveHourReset = parseIsoDate(fiveHour && fiveHour.resets_at);
+  const sevenDayReset = parseIsoDate(sevenDay && sevenDay.resets_at);
+  const sessionResetAt = fiveHourReset
+    ? formatResetCountdown(fiveHourReset.getTime(), nowTs)
+    : 'unknown';
+  const weekResetAt = sevenDayReset
+    ? formatWeekdayTime(sevenDayReset.getTime())
+    : 'unknown';
+
+  return `📊 sess ${bar(sessionRatio)} ${sessionPct}% reset ${sessionResetAt} | 7d ${bar(weekRatio)} ${weekPct}% reset ${weekResetAt}${tokenStr}`;
+}
+
+function buildEstimatedOutput(now, nowTs, config, tokenStr) {
   const todayStart = startOfToday(now);
   const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
   const sessionStart = nowTs - 5 * 60 * 60 * 1000;
-  const todayStr = formatDateLocal(nowTs);
-  const config = loadConfig();
-
   const projectEvents = loadProjectHistory();
   const allEvents = loadAllHistory();
 
   if (projectEvents.length === 0 && allEvents.length === 0) {
-    process.stdout.write('📊 当前项目暂无近实时记录');
-    return;
+    return '📊 当前项目暂无近实时记录';
   }
 
   const sessionEvents = allEvents.filter((item) => item.timestamp >= sessionStart);
@@ -333,10 +444,6 @@ function main() {
   const weekRatio = weekUsage / WEEKLY_TOKEN_BUDGET;
   const sessionPct = Math.round(sessionRatio * 100);
   const weekPct = Math.round(weekRatio * 100);
-  const tokenInfo = readTokenInfo(todayStr);
-  const tokenStr = tokenInfo
-    ? ` | tok ${fmtCompact(tokenInfo.totalTokens)}${tokenInfo.isStale ? '~' : ''}`
-    : '';
   const sessionResetTs = sessionEvents.length > 0
     ? sessionEvents[0].timestamp + 5 * 60 * 60 * 1000
     : nowTs + 5 * 60 * 60 * 1000;
@@ -349,9 +456,29 @@ function main() {
     ? formatWeekdayTime(weekResetTs)
     : formatResetCountdown(weekResetTs, nowTs);
 
-  process.stdout.write(
-    `📊 sess ${bar(sessionRatio)} ${sessionPct}% ${fmtCompact(sessionUsage)}/${fmtCompact(CURRENT_SESSION_TOKEN_BUDGET)} reset ${sessionResetAt} | 7d ${bar(weekRatio)} ${weekPct}% ${fmtCompact(weekUsage)}/${fmtCompact(WEEKLY_TOKEN_BUDGET)} reset ${weekResetAt}${tokenStr}`
-  );
+  return `📊 est sess ${bar(sessionRatio)} ${sessionPct}% ${fmtCompact(sessionUsage)}/${fmtCompact(CURRENT_SESSION_TOKEN_BUDGET)} reset ${sessionResetAt} | 7d ${bar(weekRatio)} ${weekPct}% ${fmtCompact(weekUsage)}/${fmtCompact(WEEKLY_TOKEN_BUDGET)} reset ${weekResetAt}${tokenStr}`;
 }
 
-main();
+async function main() {
+  const now = new Date();
+  const nowTs = now.getTime();
+  const todayStr = formatDateLocal(nowTs);
+  const config = loadConfig();
+  const tokenInfo = readTokenInfo(todayStr);
+  const tokenStr = tokenInfo
+    ? ` | tok ${fmtCompact(tokenInfo.totalTokens)}${tokenInfo.isStale ? '~' : ''}`
+    : '';
+
+  const officialUsage = await getOfficialUsage();
+  const officialOutput = buildOfficialOutput(officialUsage, nowTs, tokenStr);
+  if (officialOutput) {
+    process.stdout.write(officialOutput);
+    return;
+  }
+
+  process.stdout.write(buildEstimatedOutput(now, nowTs, config, tokenStr));
+}
+
+main().catch((error) => {
+  process.stdout.write(`📊 usage unavailable: ${error.message}`);
+});

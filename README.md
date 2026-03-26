@@ -1,13 +1,13 @@
 # claude-cli-usage-process
 
-给 Claude CLI 的状态栏加一个本地近实时 usage 展示，尽量贴近 Claude App 的 session / weekly 进度观感。
+给 Claude CLI 的状态栏加一个 usage 展示：macOS 上优先读取官方 usage API 真值，失败时回退到本地近实时估算，尽量贴近 Claude App 的 session / weekly 进度观感。
 
 适合想在 CLI 里快速看到“当前 5 小时窗口用了多少、最近 7 天大概用了多少、什么时候重置”的用户。
 
 ## 效果
 
 ```text
-📊 sess █░░░░░░░ 14% 1.1K/7.8K reset in 3h 32m | 7d ░░░░░░░░ 2% 1.4K/70.0K reset Thu 3:59 PM | tok 5.9K~
+📊 sess ███░░░░░ 31% reset in 2h 18m | 7d ██░░░░░░ 22% reset Thu 3:59 PM | tok 5.9K~
 ```
 
 ## 快速开始
@@ -23,42 +23,49 @@
 
 ## 亮点
 
-- `sess`：按全账号最近 5 小时窗口估算
-- `7d`：按全账号最近 7 天窗口估算
+- `sess`：macOS 上优先显示官方 5 小时窗口真值
+- `7d`：macOS 上优先显示官方 7 天窗口真值
 - `sess reset`：显示倒计时，例如 `in 3h 11m`
-- `7d reset`：支持固定成类似 `Thu 3:59 PM` 的 App 风格时间
+- `7d reset`：官方模式显示服务端重置时间，估算模式支持固定成类似 `Thu 3:59 PM`
 - `tok`：显示 `stats-cache.json` 里的 token 缓存值
+- `est`：表示当前已回退到本地估算模式
 - 自带 [install.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/install.sh) 和 [uninstall.sh](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/uninstall.sh)
 - 自带 Bash 和 PowerShell 安装 / 卸载脚本
 
 ## 适用场景
 
 - 你主要在 Claude CLI 里工作，想随时看 usage 趋势
-- 你想在本地模拟接近 Claude App 的 session / weekly 状态感知
-- 你接受“估算值”，不要求和官方额度面板完全一致
+- 你想在 CLI 里优先看到官方 session / weekly 真值
+- 你接受在官方数据不可用时退回本地估算
 
 ## 字段说明
 
-- `sess`：最近 5 小时窗口的估算消耗
-- `7d`：最近 7 天窗口的估算消耗
+- `sess`：最近 5 小时窗口用量，官方模式显示真值，估算模式显示本地推算
+- `7d`：最近 7 天窗口用量，官方模式显示真值，估算模式显示本地推算
 - `tok`：`~/.claude/stats-cache.json` 里最近一条 token 汇总
 - `~`：表示 token 不是当天实时值，而是缓存值
+- `est`：表示这一行是 fallback 估算值，不是官方服务端账本
 
 ## 能力边界
 
-这个项目是“本地估算条”，不是官方真实额度面板。
+这个项目默认是“官方优先 + 本地回退”，不是完整官方面板。
 
-- 能较快反映本机账号近期的使用趋势
-- 不能保证和 Claude App / Pro / Max 的官方 quota 完全一致
-- 不能直接读取官方剩余额度
-- `sess reset` 是按本地 5 小时窗口估算
-- `7d reset` 如果未显式配置，会退回到本地窗口推断
+- macOS 上会尝试读取本机 Claude 凭据并调用官方 usage API
+- 官方路径失败时，会自动回退到本地估算
+- 非 macOS 环境默认只能走估算模式
+- 不能保证和 Claude App / Pro / Max 的所有隐藏额度字段完全一致
+- `sess reset` 和 `7d reset` 在估算模式下仍然是本地推断
 
-适合用来盯趋势，不适合当账单或官方配额真值。
+适合用来盯趋势；在 macOS 上，`sess/7d` 会尽量使用官方真值。
 
 ## 数据来源
 
-近实时数据来自：
+官方数据来自：
+
+- macOS Keychain 中的 Claude OAuth 凭据
+- `https://api.anthropic.com/api/oauth/usage`
+
+本地回退数据来自：
 
 - `~/.claude/history.jsonl`
 
@@ -66,7 +73,7 @@ token 兜底数据来自：
 
 - `~/.claude/stats-cache.json`
 
-其中 `history.jsonl` 更接近实时，`stats-cache.json` 通常会有滞后。
+其中官方 usage API 优先；`history.jsonl` 用于 fallback 估算，`stats-cache.json` 通常会有滞后。
 
 ## 文件结构
 
@@ -212,6 +219,9 @@ reset Thu 3:59 PM
 
 脚本支持环境变量覆盖默认值：
 
+- `USAGE_MODE`：默认 `auto`，可选 `auto`、`official`、`estimate`
+- `USAGE_API_TIMEOUT_MS`：默认 `4000`
+- `CLAUDE_KEYCHAIN_SERVICE`：默认 `Claude Code-credentials`
 - `CURRENT_SESSION_TOKEN_BUDGET`：默认 `7800`
 - `WEEKLY_TOKEN_BUDGET`：默认 `70000`
 - `BAR_WIDTH`：默认 `8`
@@ -229,15 +239,31 @@ reset Thu 3:59 PM
 CURRENT_SESSION_TOKEN_BUDGET=10000 WEEKLY_TOKEN_BUDGET=80000 node scripts/usage-bar.js
 ```
 
+强制只用官方模式：
+
+```bash
+USAGE_MODE=official node scripts/usage-bar.js
+```
+
+强制只用本地估算：
+
+```bash
+USAGE_MODE=estimate node scripts/usage-bar.js
+```
+
 ## FAQ
+
+### 为什么有时前面会出现 `est`？
+
+表示当前官方 usage API 不可用，脚本已经回退到本地估算模式。
 
 ### 为什么和 Claude App 显示的不完全一样？
 
-因为这个项目读的是本地 `history.jsonl` 和 `stats-cache.json`，做的是近实时估算，不是官方服务端账本。
+官方模式下，`sess/7d` 已经来自官方 usage API；但 `tok` 仍来自本地缓存，而且 fallback 模式下仍然会使用本地估算，所以不保证任何时刻都和 App 完全一致。
 
 ### 为什么 weekly reset 可以显示成 `Thu 3:59 PM`？
 
-因为支持在 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里固定周重置时间，用来贴近你在 App 里看到的时间。
+因为估算模式支持在 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里固定周重置时间，用来贴近你在 App 里看到的时间。官方模式优先显示服务端 reset。
 
 ### 为什么有时 token 后面有 `~`？
 
@@ -247,9 +273,9 @@ CURRENT_SESSION_TOKEN_BUDGET=10000 WEEKLY_TOKEN_BUDGET=80000 node scripts/usage-
 
 实现策略：
 
-- 读取 `history.jsonl`
-- 基于消息长度、slash command、上下文膨胀做估算
-- 计算最近 5 小时和最近 7 天窗口
+- macOS 上先从 Keychain 读取 Claude OAuth token
+- 调用官方 usage API 获取 `five_hour` 和 `seven_day`
+- 若官方路径不可用，再读取 `history.jsonl` 做本地估算
 - 用 `stats-cache.json` 提供 token 补充信息
 
-优点是依赖少、可移植、安装成本低。缺点是它永远只是估算，不会是官方真值。
+优点是 macOS 上能优先显示官方真值，同时保留零依赖 fallback。缺点是官方路径依赖 macOS Keychain，跨平台时仍然只能估算。
