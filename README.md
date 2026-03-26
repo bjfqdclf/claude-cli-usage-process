@@ -255,27 +255,63 @@ USAGE_MODE=estimate node scripts/usage-bar.js
 
 ### 为什么有时前面会出现 `est`？
 
-表示当前官方 usage API 不可用，脚本已经回退到本地估算模式。
+表示这一行不是官方服务端返回值，而是本地估算值。
+
+出现 `est` 通常有几种情况：
+
+- 当前不是 macOS，无法读取 macOS Keychain
+- Claude 凭据不在本机 Keychain 里，或服务名不匹配
+- 官方 usage API 请求失败、超时或返回异常
+- 你显式设置了 `USAGE_MODE=estimate`
 
 ### 为什么和 Claude App 显示的不完全一样？
 
-官方模式下，`sess/7d` 已经来自官方 usage API；但 `tok` 仍来自本地缓存，而且 fallback 模式下仍然会使用本地估算，所以不保证任何时刻都和 App 完全一致。
+因为这个状态栏不是 Claude App 的完整镜像，只复用了其中一部分信息源。
+
+- `sess` 和 `7d` 在官方模式下来自 usage API，但只显示百分比和 reset，不展示 App 里的全部隐藏字段
+- `tok` 仍然来自本地 `stats-cache.json`，不是官方账本值
+- 只要官方路径失败，脚本就会自动回退到本地估算
+- 估算模式依赖 `history.jsonl`、经验参数和本地窗口推断，本身就不可能和服务端完全一致
 
 ### 为什么 weekly reset 可以显示成 `Thu 3:59 PM`？
 
-因为估算模式支持在 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里固定周重置时间，用来贴近你在 App 里看到的时间。官方模式优先显示服务端 reset。
+因为这里有两套来源：
+
+- 官方模式：优先使用 usage API 返回的 `resets_at`
+- 估算模式：使用 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里的固定周重置时间
+
+所以你看到 `Thu 3:59 PM`，通常说明当前在估算模式，或者你本地希望强制贴近 App 的展示习惯。
 
 ### 为什么有时 token 后面有 `~`？
 
-表示这个 token 值来自缓存，不一定是当天实时值。
+表示 `tok` 用的是 `stats-cache.json` 里的最近可用缓存，而不是当天实时新值。
+
+常见原因：
+
+- 今天的数据还没写入缓存
+- 当前只拿到了最近一条历史 token 汇总
+- Claude CLI 本地统计刷新比 usage API 更慢
 
 ## 实现说明
 
-实现策略：
+脚本按“官方优先，估算回退”的顺序工作。
 
-- macOS 上先从 Keychain 读取 Claude OAuth token
-- 调用官方 usage API 获取 `five_hour` 和 `seven_day`
-- 若官方路径不可用，再读取 `history.jsonl` 做本地估算
-- 用 `stats-cache.json` 提供 token 补充信息
+执行流程：
 
-优点是 macOS 上能优先显示官方真值，同时保留零依赖 fallback。缺点是官方路径依赖 macOS Keychain，跨平台时仍然只能估算。
+1. 读取 `USAGE_MODE`
+2. 如果允许官方模式，且当前在 macOS：
+3. 通过 `/usr/bin/security find-generic-password` 从 Keychain 读取 Claude 凭据
+4. 从凭据 JSON 中提取 `claudeAiOauth.accessToken`
+5. 调用 `https://api.anthropic.com/api/oauth/usage`
+6. 如果拿到 `five_hour` / `seven_day`，直接输出官方 `sess` 和 `7d`
+7. 如果上面任一步失败，则回退到本地估算
+8. 本地估算会读取 `history.jsonl`，按最近 5 小时和最近 7 天窗口计算估算消耗
+9. `tok` 始终来自 `stats-cache.json` 的最近可用缓存行
+
+输出规则：
+
+- 官方成功：显示 `sess ... | 7d ... | tok ...`
+- 官方失败或被禁用：显示 `est sess ... | 7d ... | tok ...`
+- 完全没有可用本地记录时：显示“当前项目暂无近实时记录”
+
+这样做的目的，是在 macOS 上尽量靠近官方真值，同时保持脚本仍然可独立运行，不把整个项目绑死在 Keychain 或 Anthropic 接口上。
