@@ -21,6 +21,11 @@
 
 安装或卸载后，重启 Claude CLI 即可生效。
 
+说明：
+
+- macOS 默认优先走官方 usage API
+- Linux 和 Windows 默认走本地估算
+
 ## 亮点
 
 - `sess`：macOS 上优先显示官方 5 小时窗口真值
@@ -85,8 +90,6 @@ uninstall.ps1
 usage-config.json
 scripts/
   usage-bar.js
-.claude/
-  settings.local.json
 ```
 
 说明：
@@ -280,7 +283,10 @@ USAGE_MODE=estimate node scripts/usage-bar.js
 - 官方模式：优先使用 usage API 返回的 `resets_at`
 - 估算模式：使用 [usage-config.json](/Users/bjfqdclf/Public/dev/claude-cli-usage-process/usage-config.json) 里的固定周重置时间
 
-所以你看到 `Thu 3:59 PM`，通常说明当前在估算模式，或者你本地希望强制贴近 App 的展示习惯。
+所以你看到 `Thu 3:59 PM`，可能是两种情况：
+
+- 当前在官方模式，服务端返回的 reset 被格式化成这个时间
+- 当前在估算模式，脚本使用了本地固定周重置时间
 
 ### 为什么有时 token 后面有 `~`？
 
@@ -306,12 +312,12 @@ USAGE_MODE=estimate node scripts/usage-bar.js
 6. 如果拿到 `five_hour` / `seven_day`，直接输出官方 `sess` 和 `7d`
 7. 如果上面任一步失败，则回退到本地估算
 8. 本地估算会读取 `history.jsonl`，按最近 5 小时和最近 7 天窗口计算估算消耗
-9. `tok` 始终来自 `stats-cache.json` 的最近可用缓存行
+9. 如果 `stats-cache.json` 里有可用数据，就追加显示 `tok`
 
 输出规则：
 
 - 官方成功：显示 `sess ... | 7d ... | tok ...`
-- 官方失败或被禁用：显示 `est sess ... | 7d ... | tok ...`
+- 官方失败或被禁用，且本地有可用历史：显示 `est sess ... | 7d ... | tok ...`
 - 完全没有可用本地记录时：显示“当前项目暂无近实时记录”
 
 这样做的目的，是在 macOS 上尽量靠近官方真值，同时保持脚本仍然可独立运行，不把整个项目绑死在 Keychain 或 Anthropic 接口上。
